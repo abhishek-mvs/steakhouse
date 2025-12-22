@@ -1,6 +1,61 @@
 import { Request, Response } from 'express';
 
-import { authenticateUser, getUserIdFromToken, signOutUser, getCurrentUserProfile} from '../managers/authManager/index.js';
+import { authenticateUser, getUserIdFromToken, signOutUser, getCurrentUserProfile, signUpUser } from '../managers/authManager/index.js';
+
+/**
+ * Signup controller
+ * Creates a new user account and profile
+ */
+export const signup = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, password, name, organization_id, role } = req.body;
+
+    if (!email || !password || !name || !organization_id) {
+      res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Email, password, name, and organization_id are required',
+      });
+      return;
+    }
+
+    const result = await signUpUser({
+      email,
+      password,
+      name,
+      organization_id,
+      role: role || 'Member',
+    });
+
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Signup error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    
+    // Determine appropriate status code based on error
+    if (errorMessage.includes('already registered') || errorMessage.includes('already exists')) {
+      res.status(409).json({
+        error: 'User already exists',
+        message: errorMessage,
+      });
+    } else if (errorMessage.includes('organization') || errorMessage.includes('foreign key')) {
+      res.status(400).json({
+        error: 'Invalid organization',
+        message: 'Organization not found or invalid',
+      });
+    } else if (errorMessage.includes('EMAIL_CONFIRMATION_REQUIRED')) {
+      // User created but needs email confirmation
+      res.status(201).json({
+        message: errorMessage.replace('EMAIL_CONFIRMATION_REQUIRED: ', ''),
+        requiresEmailConfirmation: true,
+      });
+    } else {
+      res.status(500).json({
+        error: 'Internal server error',
+        message: errorMessage,
+      });
+    }
+  }
+};
 
 /**
  * Login controller
@@ -63,9 +118,8 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Get user ID from token and sign out
-    const userId = await getUserIdFromToken(accessToken);
-    await signOutUser(userId);
+    // Sign out using the access token
+    await signOutUser(accessToken);
 
     res.status(200).json({
       message: 'Successfully logged out',
