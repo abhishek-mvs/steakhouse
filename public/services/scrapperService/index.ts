@@ -1,5 +1,5 @@
 import { getSupabaseAdminClient } from "../../pkg/db/supabaseClient.js";
-import { Scrapper } from "../../models/scrapper.js";
+import { Scrapper } from "../../db_models/scrapper.js";
 
 /**
  * Create a new scrapper record

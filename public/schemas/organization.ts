@@ -3,7 +3,7 @@
  */
 
 // Re-export model for convenience
-export type { Organization } from '../models/organization.js';
+export type { Organization } from '../db_models/organization.js';
 
 /**
  * Input for creating a new organization
