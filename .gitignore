@@ -1,0 +1,40 @@
+# Ignore environment variable files
+.env
+.env.*
+!/.env.example
+
+# Ignore build outputs
+dist/
+build/
+out/
+
+# Ignore node_modules
+node_modules/
+
+# Ignore logs
+*.log
+logs/
+npm-debug.log*
+
+# Ignore OS & editor folders
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Ignore local Supabase config if present
+.supabase/
+
+# Ignore TypeScript build artifacts
+*.tsbuildinfo
+
+# Ignore coverage reports
+coverage/
+
+# Ignore local SQLite/DB files
+*.sqlite
+*.db
+
+# Ignore by convention for public/ and default serverless stuff
+public/pkg/db/supabaseClient.local.ts
+
