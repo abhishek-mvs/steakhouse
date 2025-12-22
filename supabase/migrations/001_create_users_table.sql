@@ -2,14 +2,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- NOTE: This migration assumes the 'organizations' table already exists.
--- If it doesn't exist, create it first or update this migration accordingly.
+-- Run migration 002_create_organizations_table.sql first before this one.
 
 -- Users table
 -- This table extends Supabase auth.users with additional organization and role information
 -- The user_id references auth.users(id) from Supabase Auth
 CREATE TABLE users (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('Admin', 'Member')),
   name TEXT NOT NULL,
   email TEXT NOT NULL,

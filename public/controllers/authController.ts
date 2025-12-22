@@ -8,12 +8,12 @@ import { authenticateUser, getUserIdFromToken, signOutUser, getCurrentUserProfil
  */
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name, organization_id, role } = req.body;
+    const { email, password, name, organization_name, domain_url, role } = req.body;
 
-    if (!email || !password || !name || !organization_id) {
+    if (!email || !password || !name || !organization_name || !domain_url) {
       res.status(400).json({
         error: 'Missing required fields',
-        message: 'Email, password, name, and organization_id are required',
+        message: 'Email, password, name, organization_name, and domain_url are required',
       });
       return;
     }
@@ -22,8 +22,9 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       email,
       password,
       name,
-      organization_id,
-      role: role || 'Member',
+      organization_name,
+      domain_url,
+      role, // Optional - defaults to 'Admin' for organization creator
     });
 
     res.status(201).json(result);

@@ -5,8 +5,9 @@ export interface SignupInput {
   email: string;
   password: string;
   name: string;
-  organization_id: string;
-  role?: 'Admin' | 'Member'; // Optional, defaults to 'Member'
+  organization_name: string; // Organization name - creates a new organization
+  domain_url: string; // Organization domain URL
+  role?: 'Admin' | 'Member'; // Optional, defaults to 'Admin' for organization creator
 }
 
 /**

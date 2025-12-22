@@ -3,6 +3,7 @@ import { SignupInput } from '../../schemas/signup.js';
 import { createAuthClient, getSupabaseAdminClient } from '../../pkg/db/supabaseClient.js';
 import { getUserProfileById, createUserProfile } from '../../services/userService/index.js';
 import { UserProfile } from '../../schemas/user.js';
+import { createOrganization } from '../../services/organizationService/index.js';
 
 export async function authenticateUser(email: string, password: string): Promise<LoginResult> {
     const supabase = createAuthClient();
@@ -75,8 +76,8 @@ export async function getCurrentUserProfile(
 
 /**
  * Sign up a new user
- * Creates user in Supabase Auth, then creates profile in users table
- * @param input - Signup input (email, password, name, organization_id, role)
+ * Creates user in Supabase Auth, creates organization if needed, then creates profile in users table
+ * @param input - Signup input (email, password, name, organization_name, role)
  * @returns Login result with user profile and session
  */
 export async function signUpUser(input: SignupInput): Promise<LoginResult> {
@@ -93,21 +94,29 @@ export async function signUpUser(input: SignupInput): Promise<LoginResult> {
   }
 
   try {
-    // Step 2: Create user profile in users table
+    // Step 2: Create new organization with the provided name and domain_url
+    const newOrganization = await createOrganization({
+      name: input.organization_name,
+      domain_url: input.domain_url,
+    });
+    const organizationId = newOrganization.organization_id;
+    const userRole = input.role || 'Admin'; // Default to Admin for organization creator
+
+    // Step 3: Create user profile in users table
     const userProfile = await createUserProfile(
       authData.user.id,
       input.email,
       input.name,
-      input.organization_id,
-      input.role || 'Member'
+      organizationId,
+      userRole
     );
 
-    // Step 3: Check if session is available
+    // Step 4: Check if session is available
     // Note: If email confirmation is required in Supabase settings,
     // session will be null and user needs to confirm email first
     if (!authData.session) {
       // User created but email confirmation required
-      // Don't rollback - user profile is created, they just need to confirm email
+      // Don't rollback - user profile and organization are created, they just need to confirm email
       throw new Error(
         'EMAIL_CONFIRMATION_REQUIRED: User created successfully, but email confirmation is required. Please check your email to confirm your account before logging in.'
       );
@@ -124,12 +133,15 @@ export async function signUpUser(input: SignupInput): Promise<LoginResult> {
       },
     };
   } catch (error) {
-    // Only rollback if it's NOT an email confirmation error
+    // Rollback logic: Only rollback if it's NOT an email confirmation error
     // (Email confirmation errors mean user was created successfully)
     if (!(error instanceof Error && error.message.includes('EMAIL_CONFIRMATION_REQUIRED'))) {
       // Rollback: Delete auth user if profile creation fails
+      // Note: Organization is not deleted on rollback - it can be cleaned up manually if needed
       const adminClient = getSupabaseAdminClient();
-      await adminClient.auth.admin.deleteUser(authData.user.id);
+      await adminClient.auth.admin.deleteUser(authData.user.id).catch((err) => {
+        console.error('Failed to rollback auth user:', err);
+      });
     }
     throw error;
   }
