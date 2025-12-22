@@ -1,4 +1,4 @@
-import { Organization } from '../../models/organization.js';
+import { Organization } from '../../db_models/organization.js';
 import { CreateOrganizationInput, UpdateOrganizationInput } from '../../schemas/organization.js';
 import { getOrganizationById, createOrganization, updateOrganization } from '../../services/organizationService/index.js';
 import { getUserProfileById } from '../../services/userService/index.js';

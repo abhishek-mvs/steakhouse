@@ -84,6 +84,30 @@ export async function getScrappersByOrganizationId(organizationId: string): Prom
   return scrappers || [];
 }
 
+
+/**
+ * Get all scrappers for an organization
+ * @param organizationId - Organization ID
+ * @returns Array of scrapper records
+ */
+export async function getDomainScrappersByOrganizationId(organizationId: string): Promise<Scrapper[]> {
+    const supabase = getSupabaseAdminClient();
+  
+    const { data: domainScrappers, error } = await supabase
+      .from('scrapper')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('self', true)
+      .order('created_at', { ascending: false });
+  
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch domain scrappers');
+    }
+  
+    return domainScrappers || [];
+  }
+
+
 /**
  * Get scrapper by organization ID and URL
  * @param organizationId - Organization ID
