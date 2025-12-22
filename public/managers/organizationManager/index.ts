@@ -2,6 +2,7 @@ import { Organization } from '../../models/organization.js';
 import { CreateOrganizationInput, UpdateOrganizationInput } from '../../schemas/organization.js';
 import { getOrganizationById, createOrganization, updateOrganization } from '../../services/organizationService/index.js';
 import { getUserProfileById } from '../../services/userService/index.js';
+import { scrapeOrganizationUrls } from '../scrapperManager/index.js';
 
 /**
  * Get organization details for the authenticated user
@@ -50,6 +51,8 @@ export async function updateOrganizationByUserId(
   }
   
   // Update organization
-  return await updateOrganization(userProfile.organization_id, input);
+  const result = await updateOrganization(userProfile.organization_id, input);
+  scrapeOrganizationUrls(userProfile.organization_id);
+  return result;
 }
 
