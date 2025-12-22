@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "../../pkg/db/supabaseClient.js";
-import { Organization, CreateOrganizationInput, UpdateOrganizationInput } from "../../schemas/organization.js";
+import { Organization } from "../../models/organization.js";
+import { CreateOrganizationInput, UpdateOrganizationInput } from "../../schemas/organization.js";
 
 /**
  * Get organization by ID

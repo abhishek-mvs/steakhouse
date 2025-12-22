@@ -1,10 +1,6 @@
 /**
- * User profile type from the users table
+ * User schemas - API contracts for user-related requests/responses
  */
-export interface UserProfile {
-    user_id: string;
-    organization_id: string;
-    role: 'Admin' | 'Member';
-    name: string;
-    email: string;
-  }
+
+// Re-export model for convenience
+export type { UserProfile } from '../models/user.js';

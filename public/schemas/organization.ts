@@ -1,19 +1,9 @@
 /**
- * Organization type from the organizations table
+ * Organization schemas - API contracts for organization-related requests/responses
  */
-export interface Organization {
-  organization_id: string;
-  name: string;
-  domain_url: string;
-  competitive_url: string[];
-  description: string | null;
-  industry: string | null;
-  elevator_pitch: string | null;
-  target_audience_description: string | null;
-  remaining_credits: number;
-  created_at: string;
-  updated_at: string;
-}
+
+// Re-export model for convenience
+export type { Organization } from '../models/organization.js';
 
 /**
  * Input for creating a new organization

@@ -1,5 +1,5 @@
 import { getSupabaseAdminClient } from "../../pkg/db/supabaseClient.js";
-import { UserProfile } from "../../schemas/user.js";
+import { UserProfile } from "../../models/user.js";
 
 /**
  * Get user profile by user ID from the users table

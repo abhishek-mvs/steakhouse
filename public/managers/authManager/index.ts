@@ -2,7 +2,7 @@ import { LoginResult } from '../../schemas/login.js';
 import { SignupInput } from '../../schemas/signup.js';
 import { createAuthClient, getSupabaseAdminClient } from '../../pkg/db/supabaseClient.js';
 import { getUserProfileById, createUserProfile } from '../../services/userService/index.js';
-import { UserProfile } from '../../schemas/user.js';
+import { UserProfile } from '../../models/user.js';
 import { createOrganization } from '../../services/organizationService/index.js';
 
 export async function authenticateUser(email: string, password: string): Promise<LoginResult> {
