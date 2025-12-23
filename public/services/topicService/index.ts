@@ -32,6 +32,57 @@ export async function getTopicsByOrganizationId(
 }
 
 /**
+ * Get topic by ID
+ * @param topicId - Topic ID
+ * @returns Topic or null if not found
+ */
+export async function getTopicById(topicId: string): Promise<Topic | null> {
+  const supabase = getSupabaseAdminClient();
+
+  const { data: topic, error } = await supabase
+    .from('topics')
+    .select('*')
+    .eq('id', topicId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // No rows returned
+      return null;
+    }
+    throw new Error(error.message || 'Failed to fetch topic');
+  }
+
+  return topic;
+}
+
+/**
+ * Update topic status
+ * @param topicId - Topic ID
+ * @param status - Topic status ('Completed' | 'pending')
+ * @returns Updated topic
+ */
+export async function updateTopicStatus(
+  topicId: string,
+  status: 'Completed' | 'pending'
+): Promise<Topic> {
+  const supabase = getSupabaseAdminClient();
+
+  const { data: topic, error } = await supabase
+    .from('topics')
+    .update({ status })
+    .eq('id', topicId)
+    .select()
+    .single();
+
+  if (error || !topic) {
+    throw new Error(error?.message || 'Failed to update topic status');
+  }
+
+  return topic;
+}
+
+/**
  * Upsert a topic for an organization
  * Creates a new topic if it doesn't exist, or updates existing topic
  * Uses the unique constraint on (organization_id, slug)

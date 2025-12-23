@@ -33,3 +33,20 @@ export function ensureUniqueSlug(
   
     return uniqueSlug;
   }
+
+/**
+ * Count words in a text string (handles HTML and markdown content)
+ */
+export function countWords(text: string): number {
+  // Remove HTML tags and decode entities
+  const textContent = text
+    .replace(/<[^>]*>/g, ' ') // Remove HTML tags
+    .replace(/&[^;]+;/g, ' ') // Remove HTML entities
+    .trim();
+
+  if (!textContent) return 0;
+
+  // Split by whitespace and filter out empty strings
+  const words = textContent.split(/\s+/).filter((word) => word.length > 0);
+  return words.length;
+}
