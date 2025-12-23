@@ -24,7 +24,7 @@ export async function generateKeywords(context: KeywordGenerationContext): Promi
   return keywords;
 }
 
-  function buildKeywordPrompt(context: KeywordGenerationContext): string {
+function buildKeywordPrompt(context: KeywordGenerationContext): string {
     const { organization, scrapedContent } = context;
   
     return `Generate exactly 1000 high-intent, SEO/AEO/GEO-relevant keywords for the following business:
