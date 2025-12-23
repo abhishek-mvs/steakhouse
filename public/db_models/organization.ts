@@ -11,6 +11,7 @@ export interface Organization {
   elevator_pitch: string | null;
   target_audience_description: string | null;
   remaining_credits: number;
+  summary: string | null;
   created_at: string;
   updated_at: string;
 }

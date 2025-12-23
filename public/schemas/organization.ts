@@ -29,5 +29,6 @@ export interface UpdateOrganizationInput {
   industry?: string;
   elevator_pitch?: string;
   target_audience_description?: string;
+  summary?: string;
 }
 

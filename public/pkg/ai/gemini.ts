@@ -34,7 +34,7 @@ export async function generateTextWithAI(options: GenerateTextOptions): Promise<
     const safeMaxTokens = Math.min(maxTokens, 8192);
     
     const result = await generateText({
-      model: google('gemini-2.5-pro'),
+      model: google('gemini-2.5-flash'),
       prompt,
       system: systemPrompt,
       temperature,
@@ -64,7 +64,7 @@ export async function generateTextWithAI(options: GenerateTextOptions): Promise<
         throw new Error(
           `AI generation hit token limit (maxTokens: ${Math.min(maxTokens, 8192)}). ` +
           `Gemini 2.5 Flash has a limit of 8192 output tokens. ` +
-          `Consider: 1) Reducing article length requirements, 2) Using gemini-1.5-pro for longer articles, or 3) Splitting content generation. ` +
+          `Consider: 1) Reducing content length requirements, 2) Using gemini-2.5-pro for longer content, or 3) Splitting content generation. ` +
           `Original error: ${errorMessage || errorName}`
         );
       }

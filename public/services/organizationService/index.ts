@@ -79,6 +79,7 @@ export async function updateOrganization(
   if (input.industry !== undefined) updateData.industry = input.industry || null;
   if (input.elevator_pitch !== undefined) updateData.elevator_pitch = input.elevator_pitch || null;
   if (input.target_audience_description !== undefined) updateData.target_audience_description = input.target_audience_description || null;
+  if (input.summary !== undefined) updateData.summary = input.summary || null;
 
   const { data: organization, error } = await supabase
     .from('organizations')
@@ -89,6 +90,32 @@ export async function updateOrganization(
 
   if (error || !organization) {
     throw new Error(error?.message || 'Failed to update organization');
+  }
+
+  return organization;
+}
+
+/**
+ * Update organization summary
+ * @param organizationId - Organization ID
+ * @param summary - Summary text to update
+ * @returns Updated organization
+ */
+export async function updateOrganizationSummary(
+  organizationId: string,
+  summary: string
+): Promise<Organization> {
+  const supabase = getSupabaseAdminClient();
+
+  const { data: organization, error } = await supabase
+    .from('organizations')
+    .update({ summary })
+    .eq('organization_id', organizationId)
+    .select()
+    .single();
+
+  if (error || !organization) {
+    throw new Error(error?.message || 'Failed to update organization summary');
   }
 
   return organization;

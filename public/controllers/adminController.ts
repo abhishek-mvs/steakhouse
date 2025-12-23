@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { generateKeywordsForOrganization, getKeywordsForOrganization  } from '../managers/keywordsManager';
 import { generateTopicsForOrganization, getTopicsForOrganization } from '../managers/topicsManager';
 import { generateArticleForOrganization, getArticlesForOrganization, generateArticleForOrganizationStream } from '../managers/articleManager';
+import { generateSummaryForOrganization } from '../managers/summaryManager';
 
 
 export const generateKeywordsForOrganizationController = async (req: Request, res: Response): Promise<void> => {
@@ -169,6 +170,23 @@ export const generateArticleForOrganizationStreamController = async (
       });
       res.end();
     }
+  }
+};
+
+export const generateSummaryForOrganizationController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { organizationId } = req.body;
+    
+    if (!organizationId) {
+      res.status(400).json({ error: 'Organization ID is required' });
+      return;
+    }
+
+    const summary = await generateSummaryForOrganization(organizationId);
+    res.status(200).json({ summary });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to generate summary for organization', message: errorMessage });
   }
 };
 
