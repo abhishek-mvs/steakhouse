@@ -1,23 +1,36 @@
 import { getOrganizationById } from "../../services/organizationService";
 import { getDomainScrappersByOrganizationId } from "../../services/scrapperService";
-import { generateArticle } from "../../agents/articleAgent";
+import { generateArticle, streamArticle } from "../../agents/articleAgent";
 import { getKeywordsByOrganizationId } from "../../services/keywordService";
 import { getTopicById, updateTopicStatus } from "../../services/topicService";
 import { createArticle, getArticlesByOrganizationId } from "../../services/articleService";
 import { Article } from "../../db_models/article";
+import { GeneratedArticle } from "../../agents/articleAgent";
+import { Organization } from "../../db_models/organization";
+import { Topic } from "../../db_models/topic";
 
 /**
- * Generate article for a topic in an organization
- * Fetches organization details, topic, keywords, scraped content,
- * then generates article using AI and saves it to the database
- * @param organizationId - Organization ID
- * @param topicId - Topic ID for which to generate the article
- * @returns Generated and saved article
+ * SSE event types for article generation
  */
-export async function generateArticleForOrganization(
+export interface ArticleGenerationEvent {
+  type: 'chunk' | 'complete' | 'error';
+  data?: any;
+  chunk?: string;
+}
+
+/**
+ * Helper function to prepare article generation context
+ * Extracted for reuse in both streaming and non-streaming versions
+ */
+async function prepareArticleGenerationContext(
   organizationId: string,
   topicId: string
-): Promise<Article> {
+): Promise<{
+  organization: Organization;
+  topic: Topic;
+  keywords: string[];
+  scrapedContent: string;
+}> {
   // Step 1: Get organization details
   const organization = await getOrganizationById(organizationId);
   if (!organization) {
@@ -56,6 +69,32 @@ export async function generateArticleForOrganization(
     throw new Error('Scraped content is empty. Please scrape organization URLs first.');
   }
 
+  return {
+    organization,
+    topic,
+    keywords,
+    scrapedContent,
+  };
+}
+
+/**
+ * Generate article for a topic in an organization
+ * Fetches organization details, topic, keywords, scraped content,
+ * then generates article using AI and saves it to the database
+ * @param organizationId - Organization ID
+ * @param topicId - Topic ID for which to generate the article
+ * @returns Generated and saved article
+ */
+export async function generateArticleForOrganization(
+  organizationId: string,
+  topicId: string
+): Promise<Article> {
+  // Prepare context
+  const { organization, topic, keywords, scrapedContent } = await prepareArticleGenerationContext(
+    organizationId,
+    topicId
+  );
+
   // Step 5: Generate article using AI agent
   const generatedArticle = await generateArticle({
     organization,
@@ -77,6 +116,65 @@ export async function generateArticleForOrganization(
   await updateTopicStatus(topicId, 'Completed');
 
   return savedArticle;
+}
+
+/**
+ * Generate article for a topic in an organization with SSE streaming
+ * Streams AI generation tokens in real-time and does NOT save to database
+ * @param organizationId - Organization ID
+ * @param topicId - Topic ID for which to generate the article
+ * @param onEvent - Callback function to emit SSE events (chunk events for streaming text)
+ * @returns Generated article (not saved to database)
+ */
+export async function generateArticleForOrganizationStream(
+  organizationId: string,
+  topicId: string,
+  onEvent: (event: ArticleGenerationEvent) => void
+): Promise<GeneratedArticle> {
+  try {
+    // Prepare context (no events emitted here - just prepare silently)
+    const { organization, topic, keywords, scrapedContent } = await prepareArticleGenerationContext(
+      organizationId,
+      topicId
+    );
+
+    // Stream article generation - chunks will be emitted via onEvent
+    const generatedArticle = await streamArticle(
+      {
+        organization,
+        topic,
+        keywords,
+        scrapedContent,
+      },
+      (chunk: string) => {
+        // Emit each chunk as it comes from Gemini
+        onEvent({
+          type: 'chunk',
+          chunk,
+        });
+      }
+    );
+
+    // Emit completion event with final data
+    onEvent({
+      type: 'complete',
+      data: {
+        blogContent: generatedArticle.blogContent,
+        markdown: generatedArticle.markdown,
+        wordCount: generatedArticle.wordCount,
+      },
+    });
+
+    return generatedArticle;
+  } catch (error) {
+    console.error('Error in generateArticleForOrganizationStream:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    onEvent({
+      type: 'error',
+      data: { message: errorMessage },
+    });
+    throw error; // Re-throw so controller can handle it
+  }
 }
 
 /**

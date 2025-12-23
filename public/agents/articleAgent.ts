@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Organization } from '../db_models/organization.js';
 import { Topic } from '../db_models/topic.js';
-import { generateTextWithAI } from '../pkg/ai/gemini.js';
+import { generateTextWithAI, streamTextWithAI } from '../pkg/ai/gemini.js';
 import { countWords } from '../utils/commonUtils.js';
 import { BlogContent, blogContentToMarkdown } from '../utils/markdownConverter.js';
 
@@ -80,6 +80,105 @@ export async function generateArticle(context: ArticleGenerationContext): Promis
       systemPrompt,
       temperature: 0.7,
       maxTokens,
+    });
+
+    if (!jsonResponse || jsonResponse.trim().length === 0) {
+      throw new Error('AI returned empty response for article generation');
+    }
+
+    // Parse BlogContent from response
+    blogContent = parseBlogContent(jsonResponse, organization.name, organization.domain_url);
+  } catch (error) {
+    console.warn('⚠️ Article generation/parsing failed');
+    console.warn(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Article generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+
+  // Clean content field - remove any FAQ section that might have been included
+  let cleanedContent = blogContent.content;
+  const faqPatterns = [
+    /\n\n##\s*FAQs?\s*$/i,
+    /\n\n##\s*Frequently\s+Asked\s+Questions?\s*$/i,
+    /\n\n##\s*FAQs?\s*\n.*$/is,
+    /\n\n##\s*Frequently\s+Asked\s+Questions?\s*\n.*$/is,
+  ];
+  
+  for (const pattern of faqPatterns) {
+    cleanedContent = cleanedContent.replace(pattern, '');
+  }
+  
+  cleanedContent = cleanedContent.replace(/\n\n\*\*Q:\*\*.*$/is, '');
+  cleanedContent = cleanedContent.replace(/\n\nQ:\s*.*$/is, '');
+  cleanedContent = cleanedContent.trim();
+  
+  blogContent.content = cleanedContent;
+
+  // Convert BlogContent to markdown
+  const markdownContent = blogContentToMarkdown(blogContent);
+
+  // Count words (from markdown content)
+  const wordCount = countWords(markdownContent);
+
+  return {
+    blogContent,
+    markdown: markdownContent,
+    wordCount,
+  };
+}
+
+/**
+ * Stream article generation for a topic
+ * Streams the AI response token by token
+ * @param context - Article generation context with organization, topic, keywords, scraped content, and optional settings
+ * @param onChunk - Callback function called for each text chunk streamed
+ * @returns Generated article with blogContent, markdown, and word count
+ */
+export async function streamArticle(
+  context: ArticleGenerationContext,
+  onChunk: (chunk: string) => void
+): Promise<GeneratedArticle> {
+  const { organization, topic, keywords, scrapedContent, settings = {} } = context;
+
+  // Default settings
+  const articleSettings: Required<ArticleSettings> = {
+    min_article_length: settings.min_article_length ?? 2000,
+    faq_count: settings.faq_count ?? 5,
+    faq_answer_length: settings.faq_answer_length ?? 100,
+  };
+
+  // Build prompt
+  const systemPrompt = loadArticleGenerationPrompt();
+  const prompt = buildArticlePrompt({
+    organization,
+    topic,
+    keywords,
+    scrapedContent,
+    settings: articleSettings,
+  });
+
+  // Calculate maxTokens based on article requirements
+  const estimatedTokensForContent = articleSettings.min_article_length * 3;
+  const estimatedTokensForFAQ = articleSettings.faq_count * articleSettings.faq_answer_length * 3;
+  const estimatedTokensForMetadata = 3000;
+  const bufferMultiplier = 2.0;
+  
+  const totalEstimatedTokens = estimatedTokensForContent + estimatedTokensForFAQ + estimatedTokensForMetadata;
+  const maxTokens = Math.min(Math.ceil(totalEstimatedTokens * bufferMultiplier), 8192);
+
+  let blogContent: BlogContent;
+  let jsonResponse: string | undefined;
+
+  try {
+    console.log('Streaming article generation from AI');
+    // Stream article generation from AI
+    jsonResponse = await streamTextWithAI({
+      prompt,
+      systemPrompt,
+      temperature: 0.7,
+      maxTokens,
+      onChunk, // Forward chunks to the callback
     });
 
     if (!jsonResponse || jsonResponse.trim().length === 0) {

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { generateKeywordsForOrganization, getKeywordsForOrganization  } from '../managers/keywordsManager';
 import { generateTopicsForOrganization, getTopicsForOrganization } from '../managers/topicsManager';
-import { generateArticleForOrganization, getArticlesForOrganization } from '../managers/articleManager';
+import { generateArticleForOrganization, getArticlesForOrganization, generateArticleForOrganizationStream } from '../managers/articleManager';
 
 
 export const generateKeywordsForOrganizationController = async (req: Request, res: Response): Promise<void> => {
@@ -106,3 +106,69 @@ export const getArticlesForOrganizationController = async (req: Request, res: Re
     res.status(500).json({ error: 'Failed to get articles for organization', message: errorMessage });
   }
 };
+
+export const generateArticleForOrganizationStreamController = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const organizationId = req.query.organizationId as string;
+  const topicId = req.query.topicId as string;
+
+  if (!organizationId || !topicId) {
+    res.status(400).json({ error: 'organizationId and topicId required' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  res.write(': connected\n\n');
+  
+  (res as any).flush?.();
+
+  const heartbeat = setInterval(() => {
+    if (clientDisconnected || res.destroyed) return;
+    res.write(': ping\n\n');
+    (res as any).flush?.();
+  }, 2000); // every 2s
+
+  let clientDisconnected = false;
+
+  req.on('close', () => {
+    clientDisconnected = true;
+    clearInterval(heartbeat);
+    console.log('Client disconnected from SSE stream');
+  });
+  
+  const sendEvent = (event: { type: string; chunk?: string; data?: any }) => {
+    if (clientDisconnected || res.destroyed) return;
+
+    res.write(`event: ${event.type}\n`);
+    res.write(`data: ${JSON.stringify(event.data ?? event.chunk)}\n\n`);
+    (res as any).flush?.();
+  };
+
+  try {
+    await generateArticleForOrganizationStream(
+      organizationId,
+      topicId,
+      sendEvent
+    );
+
+    clearInterval(heartbeat);
+    // ✅ end ONLY after completion
+    sendEvent({ type: 'done', data: '[DONE]' });
+    res.end();
+  } catch (error) {
+    if (!clientDisconnected) {
+      sendEvent({
+        type: 'error',
+        data: { message: 'Generation failed' },
+      });
+      res.end();
+    }
+  }
+};
+

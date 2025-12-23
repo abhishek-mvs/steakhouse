@@ -5,7 +5,8 @@ import {
   generateTopicsForOrganizationController,
   getTopicsForOrganizationController,
   generateArticleForOrganizationController,
-  getArticlesForOrganizationController
+  getArticlesForOrganizationController,
+  generateArticleForOrganizationStreamController
 } from '../controllers/adminController';
 const router: Router = express.Router();
 
@@ -19,8 +20,7 @@ router.get('/topics/:organizationId', getTopicsForOrganizationController);
 
 // Article routes
 router.post('/generate-article', generateArticleForOrganizationController);
+router.get('/generate-article-stream', generateArticleForOrganizationStreamController);
 router.get('/articles/:organizationId', getArticlesForOrganizationController);
-
-
 export default router;
 
