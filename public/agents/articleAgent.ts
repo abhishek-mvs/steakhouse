@@ -148,21 +148,20 @@ export async function streamArticle(
     faq_answer_length: settings.faq_answer_length ?? 100,
   };
 
-  // Build prompt
-  const systemPrompt = loadArticleGenerationPrompt();
-  const prompt = buildArticlePrompt({
+  // Build streamlined prompt for faster streaming
+  const systemPrompt = loadStreamArticleGenerationPrompt();
+  const prompt = buildStreamArticlePrompt({
     organization,
     topic,
     keywords,
-    scrapedContent,
     settings: articleSettings,
   });
 
-  // Calculate maxTokens based on article requirements
-  const estimatedTokensForContent = articleSettings.min_article_length * 3;
-  const estimatedTokensForFAQ = articleSettings.faq_count * articleSettings.faq_answer_length * 3;
-  const estimatedTokensForMetadata = 3000;
-  const bufferMultiplier = 2.0;
+  // Reduced token calculation for faster streaming
+  const estimatedTokensForContent = articleSettings.min_article_length * 2.5; // Reduced multiplier
+  const estimatedTokensForFAQ = articleSettings.faq_count * articleSettings.faq_answer_length * 2.5;
+  const estimatedTokensForMetadata = 2000; // Reduced metadata overhead
+  const bufferMultiplier = 1.5; // Smaller buffer for faster response
   
   const totalEstimatedTokens = estimatedTokensForContent + estimatedTokensForFAQ + estimatedTokensForMetadata;
   const maxTokens = Math.min(Math.ceil(totalEstimatedTokens * bufferMultiplier), 8192);
@@ -228,6 +227,56 @@ export async function streamArticle(
 }
 
 /**
+ * Load streamlined article generation prompt for streaming (faster, more concise)
+ */
+function loadStreamArticleGenerationPrompt(): string {
+  try {
+    const promptPath = join(process.cwd(), 'public/finetune/article-generation-dx.md');
+    // Use the same file but we'll build a more concise prompt
+    return `You are a content generation AI producing SEO/AEO/GEO-optimized articles. Follow these guidelines:
+
+1. **Markdown Structure**: Use # H1 for title, start with **Tl;Dr:** (<50 words). Use ## H2 for sections with descriptive titles. Use ### H3 for subsections. Write clear paragraphs under each heading.
+
+2. **Content Depth**: Be comprehensive. Include LSI keywords naturally. Add factual details and data with citations in format **【source†Lxx-Lyy】**.
+
+3. **Tables**: Include comparison/data tables using markdown syntax when relevant for information gain.
+
+4. **Key Takeaways**: Provide a "**Key Takeaways**" section as blockquote (>) with 3-5 bullet points.
+
+5. **Verdict/Summary**: Include final "Summary" table if comparing options.
+
+6. **FAQ Section**: Generate FAQs in the \`faq\` array. DO NOT include FAQs in the main \`content\` field.
+
+7. **Tone**: Authoritative, professional, E-E-A-T. Clear, informative, unbiased.
+
+8. **SEO**: Natural keyword optimization. Use query in title and first paragraph. Related keywords in headings.
+
+9. **GEO**: Clear lists, concise answers, well-structured tables for AI engines.
+
+**OUTPUT**: Return valid JSON matching this type:
+\`\`\`typescript
+export type BlogContent = {
+  title: string;
+  description: string;
+  slug: string;
+  publishedAt: string;
+  updatedAt: string;
+  author: { name: string; url: string; };
+  tags: string[];
+  ogImage?: string;
+  faq: { question: string; answer: string; }[];
+  content: string; // ONLY article body markdown, NO FAQ section
+};
+\`\`\`
+
+Return ONLY valid JSON, no markdown code blocks.`;
+  } catch (error) {
+    // Fallback to concise inline prompt
+    return `Generate SEO/AEO/GEO-optimized articles. Use # H1 title with **Tl;Dr:** (<50 words). Use ## H2 for sections. Include tables, key takeaways (blockquote), and FAQs in \`faq\` array (NOT in content). Return JSON matching BlogContent type with content field containing only article body markdown.`;
+  }
+}
+
+/**
  * Load the article generation prompt from finetune file
  */
 function loadArticleGenerationPrompt(): string {
@@ -283,6 +332,50 @@ export type BlogContent = {
 
 The \`content\` field should contain ONLY the article body markdown (introduction, main content, conclusion). **DO NOT include FAQ section in the \`content\` field.** FAQs should be provided separately in the \`faq\` array. The \`title\`, \`description\`, \`slug\`, \`publishedAt\`, \`updatedAt\`, \`author\`, \`tags\`, and \`faq\` fields will be used to generate the frontmatter. Return ONLY valid JSON, no markdown code blocks or additional text.`;
   }
+}
+
+/**
+ * Build streamlined article generation prompt for faster streaming
+ */
+function buildStreamArticlePrompt(context: {
+  organization: Organization;
+  topic: Topic;
+  keywords: string[];
+  settings: Required<ArticleSettings>;
+}): string {
+  const { organization, topic, keywords, settings } = context;
+  const now = new Date();
+  const publishedAt = now.toISOString().split('T')[0];
+  const authorUrl = `${organization.domain_url}/about`;
+
+  return `Generate SEO/AEO/GEO-optimized article:
+
+Topic: ${topic.topic_name}
+Summary: ${topic.summary ?? 'Not provided'}
+
+Business:
+- Name: ${organization.name}
+- Industry: ${organization.industry ?? 'Not specified'}
+- Domain: ${organization.domain_url}
+
+${organization.summary ? `Company Summary:\n${organization.summary.substring(0, 2000)}\n` : ''}
+
+Keywords: ${keywords.slice(0, 30).join(', ')}
+
+Requirements:
+- Content: ${settings.min_article_length} words minimum (main body only)
+- FAQ: ${settings.faq_count} questions, each answer ${settings.faq_answer_length}+ words
+- Include tables, takeaways, structured content
+- Optimize for SEO/AEO/GEO
+
+CRITICAL:
+- \`content\` field = article body ONLY (no FAQ section)
+- \`faq\` array = EXACTLY ${settings.faq_count} items
+- Slug: "${topic.slug}"
+- Published: "${publishedAt}"
+- Author: "${organization.name}" (${authorUrl})
+
+Return JSON matching BlogContent type. Content field = article body markdown only.`;
 }
 
 /**
