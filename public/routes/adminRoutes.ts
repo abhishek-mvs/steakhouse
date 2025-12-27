@@ -4,10 +4,8 @@ import {
   getKeywordsForOrganizationController,
   generateTopicsForOrganizationController,
   getTopicsForOrganizationController,
-  generateArticleForOrganizationController,
-  getArticlesForOrganizationController,
-  generateArticleForOrganizationStreamController,
-  generateSummaryForOrganizationController
+  generateSummaryForOrganizationController,
+  grantCreditsController
 } from '../controllers/adminController';
 const router: Router = express.Router();
 
@@ -19,13 +17,13 @@ router.get('/keywords/:organizationId', getKeywordsForOrganizationController);
 router.post('/generate-topics', generateTopicsForOrganizationController);
 router.get('/topics/:organizationId', getTopicsForOrganizationController);
 
-// Article routes
-router.post('/generate-article', generateArticleForOrganizationController);
-router.get('/generate-article-stream', generateArticleForOrganizationStreamController);
-router.get('/articles/:organizationId', getArticlesForOrganizationController);
+// Article routes (streaming only - non-streaming moved to user routes)
 
 // Summary routes
 router.post('/generate-summary', generateSummaryForOrganizationController);
+
+// Credit routes
+router.post('/organizations/:organizationId/credits/grant', grantCreditsController);
 
 export default router;
 

@@ -1,8 +1,13 @@
 import { Request, Response } from 'express';
 import { generateKeywordsForOrganization, getKeywordsForOrganization  } from '../managers/keywordsManager';
 import { generateTopicsForOrganization, getTopicsForOrganization } from '../managers/topicsManager';
-import { generateArticleForOrganization, getArticlesForOrganization, generateArticleForOrganizationStream } from '../managers/articleManager';
 import { generateSummaryForOrganization } from '../managers/summaryManager';
+import { 
+  getCreditBalanceForOrganization,
+  getCreditLedgerForOrganization,
+  grantCreditsToOrganization 
+} from '../managers/creditManager/index.js';
+import { getUserIdFromToken } from '../managers/authManager/index.js';
 import { ContentSource } from '../types/contentTypes';
 
 
@@ -69,120 +74,6 @@ export const getTopicsForOrganizationController = async (req: Request, res: Resp
   }
 };
 
-export const generateArticleForOrganizationController = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { organizationId, topicId, source } = req.body;
-    
-    if (!organizationId) {
-      res.status(400).json({ error: 'Organization ID is required' });
-      return;
-    }
-
-    if (!topicId) {
-      res.status(400).json({ error: 'Topic ID is required' });
-      return;
-    }
-
-    // Validate source if provided
-    const validSources = ['blog', 'linkedin', 'twitter', 'reddit'];
-    const contentSource = (source && validSources.includes(source)) ? source : 'blog';
-
-    const article = await generateArticleForOrganization(organizationId, topicId, contentSource);
-    res.status(200).json(article);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    res.status(500).json({ error: 'Failed to generate article for organization', message: errorMessage });
-  }
-};
-
-export const getArticlesForOrganizationController = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const organizationId = req.params.organizationId;
-    const topicId = req.query.topicId as string | undefined;
-    
-    if (!organizationId) {
-      res.status(400).json({ error: 'Organization ID is required' });
-      return;
-    }
-
-    const articles = await getArticlesForOrganization(organizationId, topicId);
-    res.status(200).json(articles);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    res.status(500).json({ error: 'Failed to get articles for organization', message: errorMessage });
-  }
-};
-
-export const generateArticleForOrganizationStreamController = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const organizationId = req.query.organizationId as string;
-  const topicId = req.query.topicId as string;
-  const source = req.query.source as string;
-
-  if (!organizationId || !topicId) {
-    res.status(400).json({ error: 'organizationId and topicId required' });
-    return;
-  }
-
-  // Validate source if provided
-  const validSources = ['blog', 'linkedin', 'twitter', 'reddit'];
-  const contentSource = (source && validSources.includes(source)) ? source : 'blog';
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  res.write(': connected\n\n');
-  
-  (res as any).flush?.();
-
-  const heartbeat = setInterval(() => {
-    if (clientDisconnected || res.destroyed) return;
-    res.write(': ping\n\n');
-    (res as any).flush?.();
-  }, 2000); // every 2s
-
-  let clientDisconnected = false;
-
-  req.on('close', () => {
-    clientDisconnected = true;
-    clearInterval(heartbeat);
-    console.log('Client disconnected from SSE stream');
-  });
-  
-  const sendEvent = (event: { type: string; chunk?: string; data?: any }) => {
-    if (clientDisconnected || res.destroyed) return;
-
-    res.write(`event: ${event.type}\n`);
-    res.write(`data: ${JSON.stringify(event.data ?? event.chunk)}\n\n`);
-    (res as any).flush?.();
-  };
-
-  try {
-    await generateArticleForOrganizationStream(
-      organizationId,
-      topicId,
-      sendEvent,
-      contentSource as ContentSource
-    );
-
-    clearInterval(heartbeat);
-    // ✅ end ONLY after completion
-    sendEvent({ type: 'done', data: '[DONE]' });
-    res.end();
-  } catch (error) {
-    if (!clientDisconnected) {
-      sendEvent({
-        type: 'error',
-        data: { message: 'Generation failed' },
-      });
-      res.end();
-    }
-  }
-};
 
 export const generateSummaryForOrganizationController = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -198,6 +89,109 @@ export const generateSummaryForOrganizationController = async (req: Request, res
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     res.status(500).json({ error: 'Failed to generate summary for organization', message: errorMessage });
+  }
+};
+
+/**
+ * Get credit balance for an organization
+ * GET /organizations/:id/credits
+ */
+export const getCreditBalanceController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const organizationId = req.params.id;
+    
+    if (!organizationId) {
+      res.status(400).json({ error: 'Organization ID is required' });
+      return;
+    }
+
+    const balance = await getCreditBalanceForOrganization(organizationId);
+    res.status(200).json({ organizationId, balance });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to get credit balance', message: errorMessage });
+  }
+};
+
+/**
+ * Get credit ledger for an organization (paginated audit log)
+ * GET /organizations/:id/credits/ledger
+ * Query params: startDate, endDate, platform, actionType, page, pageSize
+ */
+export const getCreditLedgerController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const organizationId = req.params.id;
+    
+    if (!organizationId) {
+      res.status(400).json({ error: 'Organization ID is required' });
+      return;
+    }
+
+    const filters = {
+      organizationId,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      platform: req.query.platform as 'blog' | 'linkedin' | 'twitter' | 'reddit' | undefined,
+      actionType: req.query.actionType as string | undefined,
+      page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+      pageSize: req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : undefined,
+    };
+
+    const ledger = await getCreditLedgerForOrganization(filters);
+    res.status(200).json(ledger);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to get credit ledger', message: errorMessage });
+  }
+};
+
+/**
+ * Grant credits to an organization (admin operation)
+ * POST /admin/organizations/:organizationId/credits/grant
+ */
+export const grantCreditsController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const organizationId = req.params.organizationId;
+    const { creditsAmount, reason, metadata } = req.body;
+    
+    if (!organizationId) {
+      res.status(400).json({ error: 'Organization ID is required' });
+      return;
+    }
+
+    if (!creditsAmount || creditsAmount <= 0) {
+      res.status(400).json({ error: 'Credits amount must be greater than 0' });
+      return;
+    }
+
+    // Extract userId from token
+    let grantedByUserId: string | null = null;
+    try {
+      const authHeader = req.headers.authorization;
+      const accessToken = authHeader?.replace('Bearer ', '');
+      if (accessToken) {
+        grantedByUserId = await getUserIdFromToken(accessToken);
+      }
+    } catch (error) {
+      // Continue with null if token extraction fails
+    }
+
+    const newBalance = await grantCreditsToOrganization(
+      organizationId,
+      grantedByUserId,
+      creditsAmount,
+      reason,
+      metadata || {}
+    );
+
+    res.status(200).json({
+      organizationId,
+      creditsGranted: creditsAmount,
+      newBalance,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to grant credits', message: errorMessage });
   }
 };
 

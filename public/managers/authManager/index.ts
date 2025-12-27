@@ -2,7 +2,7 @@ import { LoginResult } from '../../schemas/login.js';
 import { SignupInput } from '../../schemas/signup.js';
 import { createAuthClient, getSupabaseAdminClient } from '../../pkg/db/supabaseClient.js';
 import { getUserProfileById, createUserProfile } from '../../services/userService/index.js';
-import { UserProfile } from '../../models/user.js';
+import { UserProfile } from '../../db_models/user.js';
 import { createOrganization } from '../../services/organizationService/index.js';
 
 export async function authenticateUser(email: string, password: string): Promise<LoginResult> {
@@ -60,9 +60,8 @@ export async function signOutUser(accessToken: string): Promise<void> {
     throw new Error(`Logout failed: ${error.message}`);
   }
 }
-  
 
-  /**
+/**
  * Get current user profile from access token
  * @param accessToken - JWT access token
  * @returns User profile
@@ -146,5 +145,3 @@ export async function signUpUser(input: SignupInput): Promise<LoginResult> {
     throw error;
   }
 }
-  
-  

@@ -1,9 +1,13 @@
 import { getOrganizationById } from "../../services/organizationService";
 import { getDomainScrappersByOrganizationId } from "../../services/scrapperService";
-import { generateArticle, streamArticle } from "../../agents/articleAgent";
+import { generateArticle } from "../../agents/articleAgent";
 import { getKeywordsByOrganizationId } from "../../services/keywordService";
 import { getTopicById, updateTopicStatus } from "../../services/topicService";
 import { createArticle, getArticlesByOrganizationId } from "../../services/articleService";
+import { 
+  checkSufficientCredits,
+  deductCreditsForArticleCreation 
+} from "../../managers/creditManager/index.js";
 import { Article } from "../../db_models/article";
 import { GeneratedArticle } from "../../agents/articleAgent";
 import { Organization } from "../../db_models/organization";
@@ -82,23 +86,46 @@ async function prepareArticleGenerationContext(
  * Generate article for a topic in an organization
  * Fetches organization details, topic, keywords, scraped content,
  * then generates article using AI and saves it to the database
+ * 
+ * CREDIT FLOW:
+ * 1. Check credits BEFORE generation (early validation - prevents wasting AI API calls)
+ * 2. Generate article using AI
+ * 3. Create article in database
+ * 4. Deduct credits atomically (final check with locking to prevent race conditions)
+ * 
  * @param organizationId - Organization ID
  * @param topicId - Topic ID for which to generate the article
  * @param source - Content source/platform (default: 'blog')
+ * @param userId - User ID performing the action (optional, for ledger tracking)
  * @returns Generated and saved article
  */
 export async function generateArticleForOrganization(
   organizationId: string,
   topicId: string,
-  source: ContentSource = 'blog'
+  source: ContentSource = 'blog',
+  userId: string | null = null
 ): Promise<GeneratedArticle> {
-  // Prepare context
+  // STEP 1: Check credits BEFORE generating (early validation)
+  // This prevents wasting expensive AI API calls if credits are insufficient
+  const creditCheck = await checkSufficientCredits(
+    organizationId,
+    'ARTICLE_CREATE',
+    source
+  );
+  
+  if (!creditCheck.hasSufficientCredits) {
+    throw new Error(
+      `Insufficient credits. Required: ${creditCheck.requiredCredits}, Available: ${creditCheck.currentBalance}`
+    );
+  }
+
+  // STEP 2: Prepare context
   const { organization, topic, keywords, scrapedContent } = await prepareArticleGenerationContext(
     organizationId,
     topicId
   );
 
-  // Step 5: Generate article using AI agent
+  // STEP 3: Generate article using AI agent (expensive operation)
   const generatedArticle = await generateArticle({
     organization,
     topic,
@@ -107,83 +134,49 @@ export async function generateArticleForOrganization(
     source,
   });
 
-  // // Step 6: Save article to database
-  // const savedArticle = await createArticle(
-  //   organizationId,
-  //   topicId,
-  //   generatedArticle.markdown,
-  //   generatedArticle.wordCount,
-  //   source // Save source to database
-  // );
+  // STEP 4: Create article in database FIRST (so we have articleId)
+  const savedArticle = await createArticle(
+    organizationId,
+    topicId,
+    generatedArticle.markdown,
+    generatedArticle.wordCount,
+    source
+  );
 
-  // // Step 7: Update topic status to 'Completed'
-  // await updateTopicStatus(topicId, 'Completed');
+  // STEP 5: Deduct credits WITH articleId (atomic operation with locking)
+  // This does a FINAL check with row-level locking to prevent race conditions
+  // Even though we checked earlier, another request might have deducted credits
+  // The PostgreSQL function will handle this atomically
+  // Use the creditsRequired from the earlier check
+  try {
+    await deductCreditsForArticleCreation(
+      organizationId,
+      userId,
+      source,
+      creditCheck.requiredCredits, // Pass creditsRequired from the check
+      savedArticle.id, // ✅ Now we have the articleId
+      {
+        topicId,
+        topicName: topic.topic_name,
+        source,
+      }
+    );
+  } catch (error) {
+    // If credit deduction fails (e.g., credits were used by another request),
+    // we should handle the rollback
+    // Option 1: Delete the article (cleanup)
+    // Option 2: Mark article as "pending_payment"
+    // For now, we'll throw and let the caller handle it
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Credit deduction failed after article creation: ${errorMessage}. Article ID: ${savedArticle.id}`);
+  }
+
+  // STEP 6: Update topic status to 'Completed'
+  await updateTopicStatus(topicId, 'Completed');
 
   return generatedArticle;
 }
 
-/**
- * Generate article for a topic in an organization with SSE streaming
- * Streams AI generation tokens in real-time and does NOT save to database
- * @param organizationId - Organization ID
- * @param topicId - Topic ID for which to generate the article
- * @param onEvent - Callback function to emit SSE events (chunk events for streaming text)
- * @param source - Content source/platform (default: 'blog')
- * @returns Generated article (not saved to database)
- */
-export async function generateArticleForOrganizationStream(
-  organizationId: string,
-  topicId: string,
-  onEvent: (event: ArticleGenerationEvent) => void,
-  source: ContentSource = 'blog'
-): Promise<GeneratedArticle> {
-  try {
-    // Prepare context (no events emitted here - just prepare silently)
-    const { organization, topic, keywords, scrapedContent } = await prepareArticleGenerationContext(
-      organizationId,
-      topicId
-    );
-
-    // Stream article generation - chunks will be emitted via onEvent
-    const generatedArticle = await streamArticle(
-      {
-        organization,
-        topic,
-        keywords,
-        scrapedContent,
-        source,
-      },
-      (chunk: string) => {
-        // Emit each chunk as it comes from Gemini
-        onEvent({
-          type: 'chunk',
-          chunk,
-        });
-      }
-    );
-
-    // Emit completion event with final data
-    onEvent({
-      type: 'complete',
-      data: {
-        content: generatedArticle.content,
-        markdown: generatedArticle.markdown,
-        wordCount: generatedArticle.wordCount,
-        source: generatedArticle.source,
-      },
-    });
-
-    return generatedArticle;
-  } catch (error) {
-    console.error('Error in generateArticleForOrganizationStream:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    onEvent({
-      type: 'error',
-      data: { message: errorMessage },
-    });
-    throw error; // Re-throw so controller can handle it
-  }
-}
 
 /**
  * Get articles for an organization with optional topic filter
