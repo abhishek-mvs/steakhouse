@@ -8,6 +8,7 @@ import { Article } from "../../db_models/article";
 import { GeneratedArticle } from "../../agents/articleAgent";
 import { Organization } from "../../db_models/organization";
 import { Topic } from "../../db_models/topic";
+import { ContentSource } from "../../types/contentTypes";
 
 /**
  * SSE event types for article generation
@@ -83,12 +84,14 @@ async function prepareArticleGenerationContext(
  * then generates article using AI and saves it to the database
  * @param organizationId - Organization ID
  * @param topicId - Topic ID for which to generate the article
+ * @param source - Content source/platform (default: 'blog')
  * @returns Generated and saved article
  */
 export async function generateArticleForOrganization(
   organizationId: string,
-  topicId: string
-): Promise<Article> {
+  topicId: string,
+  source: ContentSource = 'blog'
+): Promise<GeneratedArticle> {
   // Prepare context
   const { organization, topic, keywords, scrapedContent } = await prepareArticleGenerationContext(
     organizationId,
@@ -101,21 +104,22 @@ export async function generateArticleForOrganization(
     topic,
     keywords,
     scrapedContent,
+    source,
   });
 
-  // Step 6: Save article to database
-  const savedArticle = await createArticle(
-    organizationId,
-    topicId,
-    generatedArticle.markdown,
-    generatedArticle.wordCount,
-    null // source can be set later if needed
-  );
+  // // Step 6: Save article to database
+  // const savedArticle = await createArticle(
+  //   organizationId,
+  //   topicId,
+  //   generatedArticle.markdown,
+  //   generatedArticle.wordCount,
+  //   source // Save source to database
+  // );
 
-  // Step 7: Update topic status to 'Completed'
-  await updateTopicStatus(topicId, 'Completed');
+  // // Step 7: Update topic status to 'Completed'
+  // await updateTopicStatus(topicId, 'Completed');
 
-  return savedArticle;
+  return generatedArticle;
 }
 
 /**
@@ -124,12 +128,14 @@ export async function generateArticleForOrganization(
  * @param organizationId - Organization ID
  * @param topicId - Topic ID for which to generate the article
  * @param onEvent - Callback function to emit SSE events (chunk events for streaming text)
+ * @param source - Content source/platform (default: 'blog')
  * @returns Generated article (not saved to database)
  */
 export async function generateArticleForOrganizationStream(
   organizationId: string,
   topicId: string,
-  onEvent: (event: ArticleGenerationEvent) => void
+  onEvent: (event: ArticleGenerationEvent) => void,
+  source: ContentSource = 'blog'
 ): Promise<GeneratedArticle> {
   try {
     // Prepare context (no events emitted here - just prepare silently)
@@ -145,6 +151,7 @@ export async function generateArticleForOrganizationStream(
         topic,
         keywords,
         scrapedContent,
+        source,
       },
       (chunk: string) => {
         // Emit each chunk as it comes from Gemini
@@ -159,9 +166,10 @@ export async function generateArticleForOrganizationStream(
     onEvent({
       type: 'complete',
       data: {
-        blogContent: generatedArticle.blogContent,
+        content: generatedArticle.content,
         markdown: generatedArticle.markdown,
         wordCount: generatedArticle.wordCount,
+        source: generatedArticle.source,
       },
     });
 

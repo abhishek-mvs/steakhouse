@@ -3,6 +3,7 @@ import { generateKeywordsForOrganization, getKeywordsForOrganization  } from '..
 import { generateTopicsForOrganization, getTopicsForOrganization } from '../managers/topicsManager';
 import { generateArticleForOrganization, getArticlesForOrganization, generateArticleForOrganizationStream } from '../managers/articleManager';
 import { generateSummaryForOrganization } from '../managers/summaryManager';
+import { ContentSource } from '../types/contentTypes';
 
 
 export const generateKeywordsForOrganizationController = async (req: Request, res: Response): Promise<void> => {
@@ -70,7 +71,7 @@ export const getTopicsForOrganizationController = async (req: Request, res: Resp
 
 export const generateArticleForOrganizationController = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { organizationId, topicId } = req.body;
+    const { organizationId, topicId, source } = req.body;
     
     if (!organizationId) {
       res.status(400).json({ error: 'Organization ID is required' });
@@ -82,7 +83,11 @@ export const generateArticleForOrganizationController = async (req: Request, res
       return;
     }
 
-    const article = await generateArticleForOrganization(organizationId, topicId);
+    // Validate source if provided
+    const validSources = ['blog', 'linkedin', 'twitter', 'reddit'];
+    const contentSource = (source && validSources.includes(source)) ? source : 'blog';
+
+    const article = await generateArticleForOrganization(organizationId, topicId, contentSource);
     res.status(200).json(article);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -114,11 +119,16 @@ export const generateArticleForOrganizationStreamController = async (
 ): Promise<void> => {
   const organizationId = req.query.organizationId as string;
   const topicId = req.query.topicId as string;
+  const source = req.query.source as string;
 
   if (!organizationId || !topicId) {
     res.status(400).json({ error: 'organizationId and topicId required' });
     return;
   }
+
+  // Validate source if provided
+  const validSources = ['blog', 'linkedin', 'twitter', 'reddit'];
+  const contentSource = (source && validSources.includes(source)) ? source : 'blog';
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -155,7 +165,8 @@ export const generateArticleForOrganizationStreamController = async (
     await generateArticleForOrganizationStream(
       organizationId,
       topicId,
-      sendEvent
+      sendEvent,
+      contentSource as ContentSource
     );
 
     clearInterval(heartbeat);
